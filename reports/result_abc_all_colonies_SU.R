@@ -63,8 +63,8 @@ for (i in 0:18) {
   colonie = paste0("posteriorSample_",i)
   
   # step variable selon la colonie
-  number_steps = length(list.files(paste0("data/ResultsABC_5params/",colonie)))
-  datafile =  paste0("data/ResultsABC_5params/",colonie,"/step",number_steps*20,".csv")
+  number_steps = length(list.files(paste0("output/ResultsABC_5params/",colonie)))
+  datafile =  paste0("output/ResultsABC_5params/",colonie,"/step",number_steps*20,".csv")
   
   
   
@@ -119,7 +119,7 @@ for (i in 0:18) {
 }
 
 pp = reduce(liste_plots, function(a,b){a+b}) + plot_layout(ncol = 5)
-ggsave("marginals_4params_v4_1.png", pp, width = 20, height = 45, dpi = 600)
+ggsave("output/figures/marginals_4params_v4_1.png", pp, width = 20, height = 45, dpi = 600)
 
 
 
@@ -152,8 +152,8 @@ for (i in 0:18) {
   #i = 0   
   colonie = paste0("posteriorSample_",i)
   
-  number_steps = length(list.files(paste0("data/ResultsABC_5params/",colonie)))
-  datafile =  paste0("data/ResultsABC_5params/",colonie,"/step",number_steps*20,".csv")
+  number_steps = length(list.files(paste0("output/ResultsABC_5params/",colonie)))
+  datafile =  paste0("output/ResultsABC_5params/",colonie,"/step",number_steps*20,".csv")
   
   post <- read_csv(datafile)
   
@@ -196,7 +196,7 @@ resample = as_tibble(resample)
 data_nets = read_csv("data/data_ants.csv")
 data_nets$colony <- 0:18
 resample2 = inner_join(resample, data_nets %>% select(colony,input_size, amount)) 
-#write_csv(resample2, "resampleABCs_4_params_v3.csv")
+write_csv(resample2, "output/resampleABCs_4_params_v3.csv")
 
 
 
@@ -220,7 +220,7 @@ resample2 = inner_join(resample, data_nets %>% select(colony,input_size, amount)
 ###################################
 
 
-simu_ReSample = read_csv("data/ResultsReSample_4_params_v3.csv")
+simu_ReSample = read_csv("output/ResultsReSample_4_params_v3.csv")
 colnames(simu_ReSample)
 
 colnames(simu_ReSample)[8:17] <- paste0("nest_",0:9)

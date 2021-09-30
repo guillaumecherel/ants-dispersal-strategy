@@ -55,7 +55,6 @@ def abc(n:Double, obs:Array[Double]) = IslandABC(
     parallelism = 100, 
     seed = seed 
 )
-  
 
 //val env = EGIEnvironment("vo.complex-systems.eu")
 val env =

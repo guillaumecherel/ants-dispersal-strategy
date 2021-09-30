@@ -1,0 +1,8 @@
+[Job]
+root = "openmole/"
+script = "openmole/ReSample_ABCs_3.oms"
+output = "output/"
+
+[OpenMole]
+address = "localhost"
+port = "8080"

@@ -1,0 +1,8 @@
+[Job]
+root = "openmole/"
+script = "Colony_fission_ABC.oms"
+output = "output/"
+
+[OpenMole]
+address = "localhost"
+port = "8080"

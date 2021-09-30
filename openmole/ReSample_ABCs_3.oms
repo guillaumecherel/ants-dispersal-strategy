@@ -19,8 +19,7 @@ val exploring_phase_dbl = Val[Double]
 val number_nests_dbl = Val[Double]
 
 
-//val s = CSVSampling(workDirectory / "resampleABCs_2.csv") set (
-val s = CSVSampling(workDirectory / "resampleABCs_4_params_v3.csv") set (    
+val s = CSVSampling(workDirectory / "openmole/resampleABCs_4_params_v3.csv") set (    
   outputs += exploring_phase_dbl.mapped,
   outputs += number_nests_dbl.mapped,
   outputs += colony.mapped,
@@ -51,20 +50,19 @@ val setModelParams = ScalaTask ("""
 //val s2 = s withIndex seed
 val s2 = s zip (seed in (UniformDistribution[Int]() take 5000000 ))
 
-//val hook_ReSample = CSVHook(workDirectory / "ResultsReSample_2.csv",  values = Seq(    
-val hook_ReSample = CSVHook(workDirectory / "Results/ResultsReSample_4_params_v3.csv",  values = Seq(        
+val hook_ReSample = CSVHook(workDirectory / "output/ResultsReSample_4_params_v3.csv",  values = Seq(        
     // inputs
     seed,exploring_phase,number_nests,colony,size_initial_colony,
     percentage_foragers,nest_quality_assessment_error,
     // output
     raw_resources_new_colonies_10
      ),  arrayOnRow = true 
-     )    
-    
-            
-            
-            
-            
+ )
+
+
+
+
+
 val run = DirectSampling(
   evaluation = Strain( MoleTask( Strain(setModelParams) -- Strain(Colony_fission_Task) -- Strain(outputPostProcess) ) ) hook(hook_ReSample) , 
   sampling = s2
