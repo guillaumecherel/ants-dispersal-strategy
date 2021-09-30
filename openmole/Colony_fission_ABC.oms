@@ -5,12 +5,15 @@
 val output = Val[String]
 val error = Val[String]
 
+val sourceDir = workDirectory / "openmole/fake_results"
+val targetDir = workDirectory / "output/ResultsABC_5params"
+
 val fakeModel = SystemExecTask(
     command = Seq(
-        s"bash -c 'mkdir ${workDirectory / 'output'}'"
-        s"bash -c 'cp -r ${workDirectory / 'openmole/fake_results'} ${workDirectory / 'output/ResultsABC_5params'}",
+        s"bash -c 'mkdir -p $targetDir'",
+        s"bash -c 'cp -r $sourceDir $targetDir",
         "bash -c 'echo Testing stdout'",
-        "bash -c 'echo Testing stderr 1>&2'")
+        "bash -c 'echo Testing stderr 1>&2'"),
     stdOut = output,
     stdErr = error)
 
