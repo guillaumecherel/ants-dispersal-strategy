@@ -1,0 +1,40 @@
+import _file_.Fissionv7_1_model._
+
+// "analyse" du modèle 
+
+// outputs 
+val raw_resources_new_colonies_10 = Val[Array[Double]]  // taille des nouvelles colonies limitée à 10
+val raw_resources_new_colonies_10_proportion = Val[Array[Double]]
+
+val raw_quality_chosen_nests_10 = Val[Array[Double]]
+val raw_distance_chosen_nests_10 = Val[Array[Double]]
+
+val outputPostProcess = ScalaTask ("""
+    val raw_resources_new_colonies_10: Array[Double] = 
+        raw_resources_new_colonies.take(10).toArray[Double] ++ Array.fill[Double](10 - raw_resources_new_colonies.length)(0)
+  
+    val raw_quality_chosen_nests_10: Array[Double] = 
+        raw_quality_chosen_nests.take(10).toArray[Double] ++ Array.fill[Double](10 - raw_quality_chosen_nests.length)(0)
+        
+    val raw_distance_chosen_nests_10: Array[Double] = 
+        raw_distance_chosen_nests.take(10).toArray[Double] ++ Array.fill[Double](10 - raw_distance_chosen_nests.length)(0)    
+  
+  
+  """) set (
+    inputs += (raw_resources_new_colonies, raw_quality_chosen_nests, raw_distance_chosen_nests),
+    outputs += (raw_resources_new_colonies_10, raw_quality_chosen_nests_10, raw_distance_chosen_nests_10)  
+)
+
+
+
+val calcul_proportion = ScalaTask ("""
+    val raw_resources_new_colonies_10_proportion: Array[Double] = 
+        raw_resources_new_colonies_10.map(x => x/size_initial_colony)
+  """) set (
+    inputs += (raw_resources_new_colonies_10,size_initial_colony),
+    outputs += raw_resources_new_colonies_10_proportion  
+)
+
+
+Fission_v7Task -- (outputPostProcess hook DisplayHook(raw_resources_new_colonies_10)  )
+//Fission_v7Task -- Strain(outputPostProcess) -- ( Strain(calcul_proportion) hook DisplayHook(raw_resources_new_colonies_10_proportion)  )

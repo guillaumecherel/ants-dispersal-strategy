@@ -1,0 +1,124 @@
+val seed = Val[Int]
+val workers_and_brood = Val[Double]
+val foragers = Val[Double]
+val max_ticks = Val[Double]
+val nb_new_nests = Val[Double]
+val position_new_nests = Val[String]
+val new_nest_quality = Val[Double]
+val exclusion_radius = Val[Double]
+val new_nest_quality_SD = Val[Double]
+val exploring_phase = Val[Double]
+val nest_quality_assessment_error = Val[Double]
+//val nest_quality_assessment_error_check = Val[Double]
+val choice_strategy = Val[String]
+val ticks = Val[Double]
+
+val number_chosen_new_nests = Val[Double]
+val mean_resources_chosen_new_nests = Val[Double]
+val CV = Val[Double]
+val mean_quality_chosen_new_nests = Val[Double]
+val mean_quality_all_nests = Val[Double]
+val mean_distance_chosen_new_nests = Val[Double]
+val mean_distance_all_new_nests = Val[Double]
+val raw_resources_chosen_new_nests = Val[Array[Double]]
+val raw_quality_chosen_new_nests = Val[Array[Double]]
+val raw_distance_chosen_new_nests = Val[Array[Double]]
+val raw_resources_chosen_new_nests_10 = Val[Array[Double]]
+
+val observed = Array[Double](1284, 244, 160, 71, 49, 0, 0, 0, 0, 0)
+
+val launch = List("random-seed ${seed}", "setup","while [not stop_sim?] [go]")
+
+val resource_allocation_during_fission_v6Task = NetLogo6Task(workDirectory / "Resource allocation during fission v6.nlogo", launch, embedWorkspace = false, seed=seed) set(
+  inputs += (seed),
+  inputs += workers_and_brood mapped "workers_and_brood",
+  inputs += foragers mapped "foragers",
+  inputs += max_ticks mapped "max_ticks",
+  inputs += nb_new_nests mapped "nb_new_nests",
+  inputs += position_new_nests mapped "position_new_nests",
+  inputs += new_nest_quality mapped "new_nest_quality",
+  inputs += exclusion_radius mapped "exclusion_radius",
+  inputs += new_nest_quality_SD mapped "new_nest_quality_SD",
+  inputs += exploring_phase mapped "exploring_phase",
+  inputs += nest_quality_assessment_error mapped "nest_quality_assessment_error",
+  inputs += choice_strategy mapped "choice_strategy",
+  outputs += ticks mapped "ticks",
+  
+  outputs += number_chosen_new_nests mapped "number_chosen_new_nests",
+  outputs += mean_resources_chosen_new_nests mapped "mean_resources_chosen_new_nests",
+  outputs += CV mapped "CV",
+  outputs += mean_quality_chosen_new_nests mapped "mean_quality_chosen_new_nests",
+  outputs += mean_quality_all_nests mapped "mean_quality_all_nests",
+  outputs += mean_distance_chosen_new_nests mapped "mean_distance_chosen_new_nests",
+  outputs += mean_distance_all_new_nests mapped "mean_distance_all_new_nests",
+  outputs += raw_resources_chosen_new_nests mapped "raw_resources_chosen_new_nests",
+  outputs += raw_quality_chosen_new_nests mapped "raw_quality_chosen_new_nests",
+  outputs += raw_distance_chosen_new_nests mapped "raw_distance_chosen_new_nests",
+
+
+   //Default values. Can be removed if OpenMOLE Vals are set by values coming from the workflow
+  seed := 0,
+  //workers_and_brood := 800.0,
+  workers_and_brood := observed.sum,
+  foragers := 100.0,
+  max_ticks := 10000.0,
+  nb_new_nests := 100.0,
+  position_new_nests := "random",
+  new_nest_quality := 75.0,
+  exclusion_radius := 10.0,
+  new_nest_quality_SD := 50,
+  exploring_phase := 500.0,
+  nest_quality_assessment_error := 25.0,
+  choice_strategy := "last_new_nest",
+  )
+
+val outputPostProcess = ScalaTask ("""
+    val raw_resources_chosen_new_nests_10: Array[Double] = 
+        raw_resources_chosen_new_nests.take(10).toArray[Double] ++ Array.fill[Double](10 - raw_resources_chosen_new_nests.length)(0)
+  """) set (
+  inputs += raw_resources_chosen_new_nests,
+  outputs += raw_resources_chosen_new_nests_10  
+)
+
+//resource_allocation_during_fission_v6Task hook ToStringHook()
+
+val abc =
+  IslandABC(
+    evaluation = resource_allocation_during_fission_v6Task -- outputPostProcess,
+    prior = Prior(
+        UniformPrior(nest_quality_assessment_error, 0, 50),
+        UniformPrior(new_nest_quality_SD, 0, 100),
+        UniformPrior(exploring_phase, 50, 5000)),
+    //The observed value is `(0, 0, 0)`.
+    observed = Seq(raw_resources_chosen_new_nests_10 -> observed),
+    sample = 5000,
+    generated = 50,
+    minAcceptedRatio = 0.01,
+    stopSampleSizeFactor = 5,
+    parallelism= 300
+  )
+
+val upmc = PBSEnvironment(
+    user = "monnin",
+    host = "mesu.dsi.upmc.fr",
+    flavour = PBSPro,
+    //nodes = 1,
+    //coreByNode = 1,
+    //threads = 1,
+    wallTime = 60.seconds)
+
+val egi = EGIEnvironment("vo.complex-systems.eu")
+
+val local = LocalEnvironment(4)
+
+// The script writes results in csv files in the directory
+// `posteriorSample`. Each file contains a weighted sample. The
+// column `weight` gives the weights, and the columns `theta0` and
+// `theta1` give the parameter values for each dimension. (For more
+// information about the other columns, see M. Lenormand, F. Jabot,
+// G. Deffuant; Adaptive approximate Bayesian computation for complex
+// models. 2012. Computational Statistics 28)
+
+val test = resource_allocation_during_fission_v6Task -- (outputPostProcess hook ToStringHook()) 
+
+abc hook (workDirectory / "posteriorSample", frequency=1) on local

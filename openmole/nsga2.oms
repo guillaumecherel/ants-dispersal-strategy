@@ -1,0 +1,136 @@
+import _parent_._file_.Fissionv7_1_model._
+import _parent_._file_.analyse_Fissionv7_1_model._
+
+import _file_.Modele_replique._
+
+
+
+// read the data 
+// crée un vecteur à partir de la 3 ieme colonne du fichier (le nombre de nets mesuré sur le terrain)
+val targetsNets = (workDirectory / "data_om_2.csv").content.split("\n").tail.map{
+            row => {val rowarray = row.split(",") ;  rowarray(2).toDouble }}.toArray
+
+// pour mettre des poids différends au simus selon la taille initiale
+// 2 ième colonne
+val vect_tailles_inis = (workDirectory / "data_om_2.csv").content.split("\n").tail.map{
+            row => {val rowarray = row.split(",") ;  rowarray(1).toDouble }}.toArray
+
+
+// prend les indices de colonne entre 3 et 12 (pour avoir les 10 valeurs)
+// targetsRessources10:  Array[Array[Double]]
+val targetsRessources10 = (workDirectory / "data_om_2.csv").content.split("\n").tail.map{
+            row => {val rowarray = row.split(",") ;  rowarray.drop(3).map(x => x.toDouble) }.toArray }.toArray
+            
+
+
+
+// distances (pour agrégation des réplications dans nsga)
+// but: pour minimiser dans nsga 
+
+// si la sortie du modèle simple est un double, donc celle de modele replique est un Array[Double]
+// ex: number_new_colonies
+def absoluteDistanceArray(d: Array[Double],v : Array[Double]) = {
+      d.zip(v).map{ case(a,b) => math.abs(a-b) }.sum 
+     // comparaison entre la data array[Double] et le resultat d'une simu du Modèle_replique Array[Double] (si le modèle simple renvoir un Double)
+     // on peut éventuellement mettre des poids plus important sur une des données du sampling si on sait qu'elle est plus fiable (donc pas juste faire .sum)
+}
+
+def distanceScalarSampling(data: Array[Double])(vs: Array[Array[Double]]) = {
+  vs.map( x => absoluteDistanceArray(data, x) ).median
+  // nsga replique le modèle, on a donc un array de resultat de simus, donc ici avec Modele_replique on a un array(array(Double)) : vs
+  // On compare chaque résultat de Modele_replique avec la data par la fonction absoluteDistanceArray
+  // on obtient autant de double (distance) que de fois que nsga a repliqué Modele_replique, puis en prend la médiane (par exemple)
+  // pour avoir un double, qui est l'objectif à minimiser dans nsga
+}
+
+
+
+
+// si la sortie du modèle simple est un Array[Double], donc celle de modele replique est un Array[Array[Double]]
+// ex: raw_resources_new_colonies_10
+def absoluteDistanceArrayArray(d: Array[Array[Double]], v : Array[Array[Double]]) = {
+    
+    // pour chaque colonies: calcule la distance entre les ressources données et simuléees (array)
+    val temp = d.zip(v).map{ case(arr1,arr2) => absoluteDistanceArray(arr1,arr2) }
+    // on met un poinds inversement proportionnel à la taille de la colonie 
+    temp.zip(vect_tailles_inis).map{ case(dist,poids) => dist/poids.toDouble }.sum 
+     // comparaison entre la data Array[Array[Double]] et le resultat d'une simu du Modèle_replique Array[Array[Double]] (si le modèle simple renvoi un Array[Double])
+     // on peut éventuellement mettre des poids plus important sur une des données du sampling si on sait qu'elle est plus fiable (donc pas juste faire .sum)
+     // ou juste comme ici pour ne pas donner plus d'importance au colonis plus nombreuses
+}
+
+def distanceArraySampling(data: Array[Array[Double]])(vs: Array[Array[Array[Double]]]) = {
+  vs.map{ x => absoluteDistanceArrayArray(data, x) }.median
+  // nsga replique le modèle, on a donc un array de resultat de simus, donc ici avec Modele_replique on a un array(array(array(Double))) : vs
+  // On compare chaque résultat de Modele_replique avec la data par la fonction absoluteDistanceArray
+  // on obtient autant de double (distance) que de fois que nsga a repliqué Modele_replique, puis en prend la médiane (par exemple)
+  // pour avoir un double, qui est l'objectif à minimiser dans nsga
+}
+
+
+
+// ??? faire une distance à partir des deux:  number_new_colonies (double:scalaire), 
+// et raw_resources_new_colonies_10: Array[Double]
+// ou garder deux objectifs ?
+
+
+
+
+/*
+val obj_nets = Val[Double]
+
+val obj =  ScalaTask("""
+    val targetsNets = (workDirectory / "dataom_2.csv").content.split("\n").tail.map{
+                row => {val rowarray = row.split(",") ;  rowarray(2).toDouble }}.toArray
+    
+    
+    def absoluteDistanceArray(d: Array[Double],v : Array[Double]) = {
+          d.zip(v).map{ case(a,b) => math.abs(a-b) }.sum 
+    }
+    
+    def distanceScalarSampling(data: Array[Double])(vs: Vector[Array[Double]]) = {
+      vs.map( x => absoluteDistanceArray(data, x) ).median
+    }
+
+    val obj_nets = absoluteDistanceArray(targetsNets,number_chosen_new_nests.toArray)
+    
+    """) set (
+    inputs += (number_chosen_new_nests.toArray),    
+    outputs += (obj_nets),
+    resources += workDirectory / "dataom_2.csv",   
+   )
+*/
+
+
+// dans le genome, on met les paramètres dont on airemait trouver une valeur qui
+// soit la même pour toutes les colonies
+
+val nsga = NSGA2Evolution(
+    evaluation =  myModeleResamplingForCalibration ,
+    //evaluation =  MoleTask(myModeleResamplingForCalibration -- obj) ,
+    genome = Seq(percentage_foragers in (10.0, 100.0), 
+                 exploring_phase in (100.0, 5000.0), 
+                 number_nests in (10.0, 100.0) ),
+    objectives = Seq(number_new_colonies.array aggregate distanceScalarSampling(targetsNets) ,
+                     raw_resources_new_colonies_10.array aggregate distanceArraySampling(targetsRessources10) ),
+    //objectives = Seq(obj_nets),
+    stochastic = Stochastic(seed = seed),
+    parallelism = 1,  //20,
+    termination = 10  // 100000,
+    //distribution = Island(5 minutes)
+)
+
+
+val upmc = PBSEnvironment(
+    user = "monnin",
+    host = "mesu.dsi.upmc.fr",
+    flavour = PBSPro,
+    //nodes = 1,
+    //coreByNode = 1,
+    //threads = 1,
+    wallTime = 30.minutes
+)
+
+
+nsga hook (workDirectory / "NSGA2_results_test", frequency=1)
+

@@ -1,0 +1,37 @@
+import _parent_._file_.Fissionv7_1_model._
+import _parent_._file_.analyse_Fissionv7_1_model._
+
+
+val mySampling = CSVSampling(workDirectory/ "data_om_2.csv") set (
+    columns += ("input_size", size_initial_colony),
+    separator := ','
+)
+
+// pour ajouter une seed dans le sampling 
+// En vrai take = le nombre exact de ligne dans le fichier dataon_2.csv est suffisant (mais en prendre plus évite de changer ce nombre si on chage de fichier)
+val mySamplingWithSeed = mySampling zip (seed in (UniformDistribution[Int]() take 100 ))
+
+
+
+
+// val Nestarray = Val[Array[Double]]
+
+val hook_model_replique = CSVHook(workDirectory / "result_model_replique_data_1.csv", values = Seq(number_nests, size_initial_colony, number_new_colonies))
+
+
+val myModeleResamplingForCalibration = DirectSampling(
+        //evaluation =  Fission_v7Task //hook(hook_model_replique), 
+        evaluation = Fission_v7Task -- Strain(outputPostProcess) ,
+        sampling = mySamplingWithSeed, 
+        aggregation = Seq(number_nests,number_new_colonies,size_initial_colony,raw_resources_new_colonies_10)  // number_chosen_new_nests aggregate median  // in variable   
+        //aggregation = Seq(number_chosen_new_nests in Nestarray, workers_and_brood)
+)
+
+
+myModeleResamplingForCalibration
+myModeleResamplingForCalibration hook CSVHook(workDirectory / "result_model_replique_data_2.csv", values = Seq(number_nests.array, number_new_colonies.array, size_initial_colony.array, raw_resources_new_colonies_10.array))
+
+
+
+
+
