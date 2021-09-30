@@ -2,21 +2,15 @@
 // Fakes a model run by copying the output data from openmole/fake_results to
 // output/ResultsABC_5params
 
-val output = Val[String]
-val error = Val[String]
-
 val sourceDir = workDirectory / "openmole/fake_results"
 val targetDir = workDirectory / "output/ResultsABC_5params"
 
 val fakeModel = SystemExecTask(
     command = Seq(
-        s"bash -c 'mkdir -p $targetDir'",
-        s"bash -c 'cp -r $sourceDir $targetDir",
-        "bash -c 'echo Testing stdout'",
-        "bash -c 'echo Testing stderr 1>&2'"),
-    stdOut = output,
-    stdErr = error)
+        s"""bash -c 'mkdir -p ${workDirectory / "output"}; cp -r $sourceDir $targetDir; echo Testing stdout; echo Testing stderr 2>&1; echo Source dir $sourceDir; echo Target dir $targetDir'"""
+        )
+    )
 
 val env = LocalEnvironment(1)
 
-fakeModel on env
+fakeModel
