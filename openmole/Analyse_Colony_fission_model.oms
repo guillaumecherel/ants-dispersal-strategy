@@ -1,4 +1,4 @@
-import _file_.Fissionv7_1_model._
+import _file_.Colony_fission_model._
 
 // "analyse" du modèle 
 
@@ -36,5 +36,5 @@ val calcul_proportion = ScalaTask ("""
 )
 
 
-Fission_v7Task -- (outputPostProcess hook DisplayHook(raw_resources_new_colonies_10)  )
-//Fission_v7Task -- Strain(outputPostProcess) -- ( Strain(calcul_proportion) hook DisplayHook(raw_resources_new_colonies_10_proportion)  )
+Colony_fission_Task -- (outputPostProcess hook DisplayHook(raw_resources_new_colonies_10)  )
+//Colony_fission_Task  -- Strain(outputPostProcess) -- ( Strain(calcul_proportion) hook DisplayHook(raw_resources_new_colonies_10_proportion)  )

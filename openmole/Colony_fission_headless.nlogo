@@ -1,33 +1,20 @@
-;; initial_colony located at the centre, with all resources except foragers
-;; potential nesting sites = nests
-;; new_colonies formed by fission of initial_colony and located at chosen_nests
-;;
-;;
-;; outputs:
-;;
-;; 7 variables = number_new_colonies; mean_resources_new_colonies (mean_resources_chosen_nests) ; CV (coefficient of variation between new_colonies)
-;; mean_quality_chosen_nests ; mean_quality_all_nests ; mean_distance_chosen_nests ; mean_distance_all_nests
-;;
-;; 3 lists = raw_resources_new_colonies; raw_quality_chosen_nests; raw_distance_chosen_nests
-;; the 3 lists are ranked by decreasing resources allocated to new_colonies (= nests receiving resources, and nests that received no resources are not listed)
-;;
-;;
-
-
 ;;;;;;;;;; DEFINITION OF VARIABLES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 globals
 [
+   ;; for the "headless" version analysed with OpenMole: variables that are defined in the GUI in the "stand alone" version
   seed
   size_initial_colony
   percentage_foragers
+  amount_allocated
   number_nests
   nests_quality
   nests_quality_SD
   position_nests
   exclusion_radius
   nest_quality_assessment_error
-  choice_strategy
+  choice_strategy                       ; may be "best_nest" ; "best_visited_VS_last_visited_nest" ; "best_of_last_n" ; "last_nest" or "rotating_choice"
+  n
   exploring_phase
   max_ticks
   probability_of_transporting
@@ -40,7 +27,7 @@ globals
 
   ;; for raw outputs
   number_new_colonies
-  chosen_nests                          ; temp agentset to rank chosen_nests by size
+  chosen_nests                          ; agentset to rank chosen_nests by size
   raw_resources_new_colonies
   raw_quality_all_nests
   raw_quality_chosen_nests
@@ -53,46 +40,52 @@ globals
   mean_quality_all_nests
   mean_distance_chosen_nests
   mean_distance_all_nests
-
-  visiting_workers_all_nests
-  visited_nests_all_workers
+  visiting_foragers_all_nests
+  visited_nests_all_foragers
 ]
 
 breed [initial_colonies initial_colony]  ; initial colony, from where foragers will transport resources to new colonies founded by colony fission
-breed [nests nest]                       ; these are the potential nesting sites, where new_colonies could be founded
-breed [workers worker]                   ; these are the fraction of total workers that are actually responsible for colony fission is resource allocation to new nest(s)
-breed [end_workers end_worker]           ; these are workers once they self allocated to a new nest
+breed [nests nest]                       ; potential nesting sites, where new_colonies could be founded
+breed [foragers forager]                 ; individuals that carry out resource allocation to new nest(s)
+breed [end_foragers end_forager]         ; foragers that have self allocated to a new nest
 
 turtles-own [resources]                  ; initial_colony, nests and foragers have or transport resources (ie other workers, queen and brood)
 nests-own
 [
-  quality                      ; nests may vary in quality
-  visiting_workers
+  quality                                ; nests may vary in quality
+  visiting_foragers                      ; number of foragers that have visited a given nest
 ]
-workers-own
+foragers-own
 [
-  state                                  ; workers are in 1 of 4 states: exploring, returning to the initial colony, transporting resource to a chosen nest, self_allocating oneself to a chosen nest
-  motivated_to_transport
+  state                                  ; foragers are in 1 of 4 states: exploring, returning to the initial colony, transporting resource to a chosen nest, self_allocating oneself to a chosen nest
+  motivated_to_transport?                ; foragers that have visited nest(s) may be motivated to transport resources to their chosen_nest depending on its measured quality. The default setting is motivated irrespective of chosen_nest quality
+  visited_patches                        ; agentset of all visited patches
   current_visited_nest                   ; nest visited last
-  visited_nests
+  visited_nests                          ; agentset of all visited nests
+  list_n_nests_visited_last              ; list of the n nests visited last
   chosen_nest                            ; ID of chosen nest
   assessed_quality_of_chosen_nest
 ]
 
-end_workers-own [visited_nests]
+end_foragers-own [visited_nests]
+
 
 ;;;;;;;;;; SETUP ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
 to setup-globals
-  set size_initial_colony 1000
-  set percentage_foragers 10
-  set number_nests 40
+  ;; Used by OpenMole to test varied parameter values
+  set size_initial_colony 1808
+  set percentage_foragers 20
+  set amount_allocated 1759
+  set number_nests 50
   set nests_quality 70
   set nests_quality_SD 50
   set position_nests "random"
   set exclusion_radius 10
   set nest_quality_assessment_error 3
-  set choice_strategy "best_nest"
+  set choice_strategy "current_vs_previous_best"
+  set n 5
   set exploring_phase 2000
   set max_ticks 100000
   set probability_of_transporting "unconditionnal"
@@ -102,15 +95,18 @@ to setup-globals
   set logistic_factor_s 5
 end
 
+
 to setup
-  ;;  tests for negative values if generated by OpenMole, and corrects them to zero
+   ;;  tests for negative values if generated by OpenMole, and corrects them to zero
   if size_initial_colony < 0 [set size_initial_colony 0]
   if percentage_foragers < 0 [set percentage_foragers 0]
+  if amount_allocated < 0 [set amount_allocated 0]
   if number_nests < 0 [set number_nests 0]
   if nests_quality < 0 [set nests_quality 0]
   if nests_quality_SD < 0 [set nests_quality_SD 0]
   if exclusion_radius < 0 [set exclusion_radius 0]
   if nest_quality_assessment_error < 0 [set nest_quality_assessment_error 0]
+  if n < 1 [set n 1]
   if exploring_phase < 0 [set exploring_phase  0]
   if exploring_phase > max_ticks [set exploring_phase max_ticks - 10]
   if exponential_factor < 0 [set exponential_factor 0]
@@ -121,22 +117,23 @@ to setup
   setup-patches
   setup-initial_colony
   setup-nests
-  setup-workers
+  setup-foragers
   reset-ticks
 end
 
 
-
 ;;;;;;;;;; GO ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+
 to go
-  move                                                 ; workers move to (1) explore the map, (2) return to the initial colony and (3) transport resources to a chosen nest
+  move                                                 ; foragers move to (1) explore the map, (2) return to the initial colony, (3) transport resources to a chosen nest, and (4) self allocate to their chosen_nest
   tick
 end
 
 
 to-report stop_sim?
-  let s sum [resources] of nests = size_initial_colony or ticks = max_ticks
+  ; let s sum [resources] of nests = size_initial_colony or ticks = max_ticks
+  let s sum [resources] of nests = amount_allocated or ticks = max_ticks            ; simulation ends when all allocated resources are in new nests, or time ran out
   if s
   [
     calculate_output_data
@@ -144,7 +141,9 @@ to-report stop_sim?
   report s
 end
 
+
 ;;;;;;;;;; SETUP PROCEDURES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 to setup-patches
   ask patches [set pcolor green]
@@ -152,14 +151,16 @@ end
 
 
 to setup-initial_colony                                  ; sets up the initial_colony in the centre of the map with all resources
-  set number_foragers int (size_initial_colony * percentage_foragers / 100)
+  if amount_allocated > size_initial_colony [set amount_allocated size_initial_colony]
+  if percentage_foragers > (amount_allocated / size_initial_colony * 100) [set percentage_foragers (amount_allocated / size_initial_colony * 100)]
+  set number_foragers int (size_initial_colony * percentage_foragers / 100) - 1       ; There is at least one resource that is not a forager
 
   create-initial_colonies 1
   [
     setxy 0 0
     set shape "circle"
     set color black
-    set resources size_initial_colony - number_foragers
+    set resources amount_allocated - number_foragers
     set label resources
   ]
 end
@@ -182,7 +183,7 @@ to setup-nests
         ask nests with [distance initial_colony 0 < exclusion_radius]
         [
           setxy random-xcor random-ycor
-          ; note that some nests may be located very close toone another. If one wishes, one could avoid this by re-creating nests falling within radius eg 1 of an existing nest
+          ; note that some nests may be located very close to one another. If one wishes, one could avoid this by re-creating nests falling within radius eg 1 of an existing nest
         ]
       ]
     ]
@@ -198,91 +199,115 @@ to setup-nests
     if quality < 0 [set quality 0]
     set label quality
     set resources 0
-    set visiting_workers no-turtles
+    set visiting_foragers no-turtles
   ]
 end
 
 
-to setup-workers
-  create-workers number_foragers                                ; foragers are black bugs and start in the initial_colony
+to setup-foragers
+  create-foragers number_foragers                                ; foragers are black bugs and start in the initial_colony
   [
     set shape "bug"
     setxy 0 0
     set color black
-    set current_visited_nest nobody
-    set visited_nests no-turtles
+    set current_visited_nest nobody                             ; empty agent
+    set visited_patches no-patches                              ; empty agentset
+    set visited_nests no-turtles                                ; empty agentset
+    set list_n_nests_visited_last []                            ; empty list
     set chosen_nest nobody
     set state "exploring"
-    set motivated_to_transport false                           ; at the beginning, foragers are not motivated to transport but only to explore
+    set motivated_to_transport? false                           ; at the beginning, foragers are not motivated to transport but only to explore
   ]
 end
-
 
 
 ;;;;;;;;;; GO PROCEDURES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-to move
-  ask workers
-  [
-    ifelse ticks < exploring_phase
-    [
-      explore
-      chose_nests
-    ]
-    ; end of ifelse < exploring_phase
 
-    [
-      if ticks = exploring_phase and chosen_nest != nobody [set state "returning"]
-      if state = "exploring" [explore chose_nests]
-      if state = "returning" [return]
-      if state = "transporting" [transport]
-      if state = "self_allocating" [self_allocate]
-    ]
-    ; end of ifelse > exploring_phase
+to move
+  ask foragers
+  [
+    (ifelse
+      ticks < exploring_phase
+      [
+        explore
+        chose_nests
+      ]
+
+      ticks = exploring_phase
+      [
+        ifelse chosen_nest = nobody
+        [
+          ask initial_colony 0 [set resources resources + 1]
+          die
+        ]
+        [
+          setxy 0 0
+          set state "returning"
+        ]
+      ]
+
+      ticks > exploring_phase
+      [
+        if state = "returning" [return]
+        if state = "transporting" [transport]
+        if state = "self_allocating" [self_allocate]
+      ]
+    )
   ]
 end
 
-to explore                          ; workers explore the map with random walk with + or - 45° deviation
+
+to explore                          ; foragers explore the map with random walk with + or - 45° deviation
   ifelse random 100 < 50
   [right random 45]
   [left random 45]
   forward 0.75                      ; the lenght of movement must be less than the detection radius around nests, else an agent could "jump" over a nest without detecting it
-
-  ; if the intial colony is depleted of resources the foragers who failed to find and chose a nest self-allocate themselves to one of the nests chosen by other foragers
-  ; It is implicit that they received this information from informed foragers
-  ; It could be modified so that they would go to best nests if foragers who found better nest are more inclined to inform others
-  if [resources] of initial_colony 0 = 0 and chosen_nest = nobody
-  [
-    set chosen_nest one-of nests with [resources > 0]
-    set state "self_allocating"
-    set color yellow
-  ]
+  set visited_patches (patch-set visited_patches patch-here)
 end
 
 
 to chose_nests
-  if any? nests in-radius 1                                                      ; any worker within a radius 1 around a nest detects this nest
+  if any? nests in-radius 1                                                      ; any forager within a radius 1 around a nest detects this nest
   [
-    set current_visited_nest min-one-of nests in-radius 1 [distance self]        ; if a worker detects two nests she chooses the closest one
+    set current_visited_nest min-one-of nests in-radius 1 [distance self]        ; if a forager detects two nests she chooses the closest one
+    set color blue
+
+    if not member? current_visited_nest visited_nests [set list_n_nests_visited_last fput current_visited_nest list_n_nests_visited_last]
+    ; nests that have been visited previously are not reassessed
+    if length list_n_nests_visited_last > n [set list_n_nests_visited_last remove-item n list_n_nests_visited_last]
+
+    set visited_nests (turtle-set visited_nests current_visited_nest)
+
+    run choice_strategy
 
     ask current_visited_nest
     [
       set color blue
-      set visiting_workers (turtle-set visiting_workers myself)
+      set visiting_foragers (turtle-set visiting_foragers myself)
     ]
-
-    set color blue
-    set visited_nests (turtle-set visited_nests current_visited_nest)
-
-    if choice_strategy = "best_nest" [set chosen_nest max-one-of visited_nests [int random-normal (quality) (quality * nest_quality_assessment_error / 100)] ]
-    ; Note that the quality of nests that have been visited multiple times is not better assessed!
-    if choice_strategy = "last_nest" [set chosen_nest current_visited_nest]
-    if choice_strategy = "rotating_choice" [set chosen_nest one-of visited_nests]
-
     set current_visited_nest nobody
-
-    if ticks > exploring_phase and chosen_nest != nobody [set state "returning"]
   ]
+end
+
+
+to current_vs_previous_best
+  ifelse chosen_nest = nobody
+  [set chosen_nest current_visited_nest]
+  [if not member? self [visiting_foragers] of current_visited_nest [if [quality] of current_visited_nest > [quality] of chosen_nest [set chosen_nest current_visited_nest]]]
+  ; if the forager has not previously visited the current_nest she assesses its quality. This strategy yields the same result than best_nest.
+end
+
+
+to best_of_last_n
+  let temp turtle-set list_n_nests_visited_last
+  set chosen_nest max-one-of temp [int random-normal (quality) (quality * nest_quality_assessment_error / 100)]
+  ; Note that the quality of nests that have been visited multiple times is not better assessed!
+end
+
+
+to rotating_choice
+  set chosen_nest one-of visited_nests
 end
 
 
@@ -290,7 +315,7 @@ to return
   face initial_colony 0
   forward 0.75
 
-  if distance initial_colony 0 < 1              ; if the initial_colony is at less than 1 unit of distance the worker is at the initial_colony
+  if distance initial_colony 0 < 1              ; if the initial_colony is at less than 1 unit of distance the forager is at the initial_colony
   [
     ifelse [resources] of initial_colony 0 != 0
 
@@ -299,8 +324,8 @@ to return
       ; updates rotating_choice at each return to the initial colony
       if choice_strategy = "rotating_choice" [set chosen_nest one-of visited_nests]
 
-      check_motivation_to_transport
-      if motivated_to_transport
+      run probability_of_transporting
+      if motivated_to_transport?
       [
         collect_resource
         set state "transporting"
@@ -316,41 +341,38 @@ to return
 end
 
 
+to unconditionnal
+  set motivated_to_transport? true
+end
 
-to check_motivation_to_transport
-  if probability_of_transporting = "unconditionnal" [set motivated_to_transport true]
 
-  ; foragers that have chosen a nest transport ressources to it with a probability that depend on its quality
-  ; => it's probabilistic if the quality of the chosen nest < 100, it's certain if quality >= 100
-  if probability_of_transporting = "linear"
-  [
-    if assessed_quality_of_chosen_nest >= random 100 [set motivated_to_transport true]
-  ]
+to linear
+  if assessed_quality_of_chosen_nest >= random 100 [set motivated_to_transport? true]
+end
 
-  if probability_of_transporting = "exponential"
-  [
-    if exp (assessed_quality_of_chosen_nest * exponential_factor) >= random 100 [set motivated_to_transport true]
-  ]
 
-  if probability_of_transporting = "logarithmic"
-  [
-    if ln (1 + assessed_quality_of_chosen_nest) * logarithmic_factor >= random 100  [set motivated_to_transport true]
-  ]
+to exponential
+  if exp (assessed_quality_of_chosen_nest * exponential_factor) >= random 100 [set motivated_to_transport? true]
+end
 
-  if probability_of_transporting = "logistic"
-  [
-    if 100 / (1 + exp (- (assessed_quality_of_chosen_nest - logistic_factor_mu) / logistic_factor_s)) >= random 100  [set motivated_to_transport true]
-  ]
+
+to logarithmic
+   if ln (1 + assessed_quality_of_chosen_nest) * logarithmic_factor >= random 100  [set motivated_to_transport? true]
+end
+
+
+to logistic
+  if 100 / (1 + exp (- (assessed_quality_of_chosen_nest - logistic_factor_mu) / logistic_factor_s)) >= random 100  [set motivated_to_transport? true]
 end
 
 
 to transport
   face chosen_nest
   forward 0.75
-  if distance chosen_nest < 1                 ; if the chosen nest is at less than 1 unit of distance the worker is at the chosen nest
+  if distance chosen_nest < 1                 ; if the chosen nest is at less than 1 unit of distance the forager is at the chosen nest
   [
     deposit_resource
-    set motivated_to_transport false         ; the motivation to transport is reset to false so that it is tested at each return to the initial colony
+    set motivated_to_transport? false         ; the motivation to transport is reset to false so that it is tested at each return to the initial colony
   ]
 end
 
@@ -358,7 +380,7 @@ end
 to self_allocate
   face chosen_nest
   forward 0.75
-  if distance chosen_nest < 1                                    ; if the chosen nest is at less than 1 unit of distance the worker joins this nest
+  if distance chosen_nest < 1                                    ; if the chosen nest is at less than 1 unit of distance the forager joins this nest
   [
     ask chosen_nest
     [
@@ -366,7 +388,7 @@ to self_allocate
       set resources (resources + 1)
       set label resources
     ]
-    set breed end_workers
+    set breed end_foragers
   ]
 end
 
@@ -407,15 +429,23 @@ end
 
 to calculate_output_data
   set number_new_colonies count nests with [resources > 0]
-  set mean_resources_new_colonies mean [resources] of nests with [resources > 0]
+  ifelse any? nests with [resources > 0]
+  [
+    set mean_resources_new_colonies mean [resources] of nests with [resources > 0]
+    set mean_quality_chosen_nests mean [quality] of nests with [resources > 0]
+    set mean_distance_chosen_nests mean [distancexy 0 0] of nests with [resources > 0]
+  ]
+  [
+    set mean_resources_new_colonies 0
+    set mean_quality_chosen_nests 0
+    set mean_distance_chosen_nests 0
+  ]
 
   ifelse count nests with [resources > 0] >= 2
   [set CV (standard-deviation [resources] of nests with [resources > 0]) / (mean [resources] of nests with [resources > 0]) * 100]
   [set CV 0]
 
-  set mean_quality_chosen_nests mean [quality] of nests with [resources > 0]
   set mean_quality_all_nests mean [quality] of nests
-  set mean_distance_chosen_nests mean [distancexy 0 0] of nests with [resources > 0]
   set mean_distance_all_nests mean [distancexy 0 0] of nests
 
   set chosen_nests nests with [resources > 0]
@@ -424,8 +454,8 @@ to calculate_output_data
   set raw_quality_chosen_nests []
   set raw_distance_chosen_nests []
 
-  set visiting_workers_all_nests []
-  set visited_nests_all_workers []
+  set visiting_foragers_all_nests []
+  set visited_nests_all_foragers []
 
   let i 0
   while [i <= number_nests]
@@ -433,41 +463,52 @@ to calculate_output_data
     ask nests with [who = i]
     [
       set raw_quality_all_nests lput quality raw_quality_all_nests
-      ifelse any? visiting_workers
-      [set visiting_workers_all_nests lput count visiting_workers visiting_workers_all_nests]
-      [set visiting_workers_all_nests lput 0 visiting_workers_all_nests]
+      ifelse any? visiting_foragers
+      [set visiting_foragers_all_nests lput count visiting_foragers visiting_foragers_all_nests]
+      [set visiting_foragers_all_nests lput 0 visiting_foragers_all_nests]
     ]
     set i i + 1
   ]
 
   let j 0
-  while [j <= count end_workers]
+  while [j <= count end_foragers]
   [
-    ask end_workers with [who = j + number_nests]
+    ask end_foragers with [who = j + number_nests]
     [
       ifelse any? visited_nests
-      [set visited_nests_all_workers lput count visited_nests visited_nests_all_workers]
-      [set visited_nests_all_workers lput 0 visited_nests_all_workers]
+      [set visited_nests_all_foragers lput count visited_nests visited_nests_all_foragers]
+      [set visited_nests_all_foragers lput 0 visited_nests_all_foragers]
     ]
     set j j + 1
   ]
 
-  while [any? chosen_nests]
+  ifelse any? chosen_nests
   [
-    ask max-one-of chosen_nests [resources]
+    while [any? chosen_nests]
     [
-      set raw_resources_new_colonies lput resources raw_resources_new_colonies
+      ask max-one-of chosen_nests [resources]
+      [
+        set raw_resources_new_colonies lput resources raw_resources_new_colonies
+        set raw_quality_chosen_nests lput quality raw_quality_chosen_nests
+        set raw_distance_chosen_nests lput precision (distancexy 0 0) 3 raw_distance_chosen_nests
+        set chosen_nests other chosen_nests
+      ]
+    ]
+  ]
+  [
+    ask nests
+    [
+      set raw_resources_new_colonies lput 0 raw_resources_new_colonies
       set raw_quality_chosen_nests lput quality raw_quality_chosen_nests
-      set raw_distance_chosen_nests lput precision (distancexy 0 0) 3 raw_distance_chosen_nests
-      set chosen_nests other chosen_nests
+      set raw_distance_chosen_nests lput 0 raw_distance_chosen_nests
     ]
   ]
 end
 @#$#@#$#@
 GRAPHICS-WINDOW
-718
+716
 10
-1336
+1334
 629
 -1
 -1
@@ -492,10 +533,10 @@ ticks
 30.0
 
 BUTTON
-111
-45
-176
-78
+87
+47
+152
+80
 Go
 go
 T
@@ -510,9 +551,9 @@ NIL
 
 BUTTON
 0
-78
-95
-111
+83
+83
+116
 Setup
 setup
 NIL
@@ -526,10 +567,10 @@ NIL
 1
 
 BUTTON
-111
-81
-177
-114
+87
+83
+153
+116
 Go1
 go
 NIL
@@ -543,10 +584,10 @@ NIL
 1
 
 MONITOR
-404
-10
-474
-55
+162
+40
+232
+85
 Ticks
 ticks
 17
@@ -555,9 +596,9 @@ ticks
 
 PLOT
 0
-268
+272
 354
-418
+422
 Resources: temporal evolution
 NIL
 NIL
@@ -570,15 +611,15 @@ true
 "" ""
 PENS
 "Initial_colony" 1.0 0 -16777216 true "" "plot [resources] of initial_colony 0"
-"Foragers" 1.0 0 -13345367 true "" "plot count workers"
+"Foragers" 1.0 0 -13345367 true "" "plot count foragers"
 "Sum in new_colonies" 1.0 0 -2674135 true "" "plot sum [resources] of nests"
 "Largest new_colony" 1.0 0 -955883 true "" "plot max [resources] of nests"
 
 PLOT
 0
-117
+121
 354
-267
+271
 Workers status
 NIL
 NIL
@@ -590,16 +631,16 @@ true
 true
 "" ""
 PENS
-"Exploring" 1.0 0 -16777216 true "" "plot count workers with [state = \"exploring\"]"
-"Returning" 1.0 0 -13345367 true "" "plot count workers with [state = \"returning\"]"
-"Transporting" 1.0 0 -2674135 true "" "plot count workers with [state = \"transporting\"]"
-"Self_allocating" 1.0 0 -1184463 true "" "plot count workers with [state = \"self_allocating\"]"
+"Exploring" 1.0 0 -16777216 true "" "plot count foragers with [state = \"exploring\"]"
+"Returning" 1.0 0 -13345367 true "" "plot count foragers with [state = \"returning\"]"
+"Transporting" 1.0 0 -2674135 true "" "plot count foragers with [state = \"transporting\"]"
+"Self_allocating" 1.0 0 -1184463 true "" "plot count foragers with [state = \"self_allocating\"]"
 
 PLOT
 361
-117
+121
 712
-267
+271
 Resources = f (quality)
 quality
 resources
@@ -616,9 +657,9 @@ PENS
 
 PLOT
 360
-268
+272
 711
-418
+422
 Resources =f (distance)
 distance
 resources
@@ -634,10 +675,10 @@ PENS
 "Ignored nests" 1.0 2 -16777216 true "" "ask nests with [resources = 0] [plotxy distancexy 0 0 resources]"
 
 MONITOR
-559
-10
-709
-55
+241
+19
+382
+64
 Resources at initial_colony
 [resources] of initial_colony 0
 17
@@ -645,10 +686,10 @@ Resources at initial_colony
 11
 
 MONITOR
-561
-62
-707
-107
+241
+65
+354
+110
 Resources in nests
 sum [resources] of nests
 17
@@ -656,32 +697,32 @@ sum [resources] of nests
 11
 
 MONITOR
-405
-63
-552
-108
-Resources on workers
-sum [resources] of workers
+357
+65
+483
+110
+Resources on foragers
+sum [resources] of foragers
 17
 1
 11
 
 MONITOR
-482
-10
-551
-55
-workers
-count workers
+385
+20
+483
+65
+Number foragers
+count foragers
 17
 1
 11
 
 BUTTON
-2
-44
-94
-77
+0
+47
+84
+80
 NIL
 setup-globals
 NIL
@@ -695,9 +736,9 @@ NIL
 1
 
 BUTTON
-3
+0
 10
-95
+85
 43
 NIL
 clear-all
@@ -710,6 +751,42 @@ NIL
 NIL
 NIL
 1
+
+PLOT
+1
+425
+352
+575
+Mean number of  nests visited
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [count visited_nests] of foragers"
+
+PLOT
+360
+426
+712
+576
+Mean number of patches visited (total = 3721 patches)
+NIL
+NIL
+0.0
+10.0
+0.0
+10.0
+true
+false
+"" ""
+PENS
+"default" 1.0 0 -16777216 true "" "plot mean [count visited_patches] of foragers"
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -1039,57 +1116,10 @@ false
 Polygon -7500403 true true 270 75 225 30 30 225 75 270
 Polygon -7500403 true true 30 75 75 30 270 225 225 270
 @#$#@#$#@
-NetLogo 6.1.1
+NetLogo 6.2.0
 @#$#@#$#@
 @#$#@#$#@
 @#$#@#$#@
-<experiments>
-  <experiment name="Resource allocation" repetitions="500" runMetricsEveryStep="false">
-    <setup>setup</setup>
-    <go>go</go>
-    <final>write_data_to_file</final>
-    <exitCondition>sum [resources] of new_nests = workers_and_brood or ticks = max_ticks</exitCondition>
-    <enumeratedValueSet variable="workers_and_brood">
-      <value value="800"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="foragers">
-      <value value="80"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="nb_new_nests">
-      <value value="40"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="new_nests_quality">
-      <value value="70"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="new_nests_quality_SD">
-      <value value="50"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="Position_new_nests">
-      <value value="&quot;random&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="exclusion_radius">
-      <value value="10"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="nest_quality_assessment_error">
-      <value value="3"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="choice_strategy">
-      <value value="&quot;best_new_nest&quot;"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="exploring_phase">
-      <value value="2000"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="max_ticks">
-      <value value="10000"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="show_nests_size?">
-      <value value="true"/>
-    </enumeratedValueSet>
-    <enumeratedValueSet variable="Write_data?">
-      <value value="false"/>
-    </enumeratedValueSet>
-  </experiment>
-</experiments>
 @#$#@#$#@
 @#$#@#$#@
 default

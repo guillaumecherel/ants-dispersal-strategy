@@ -1,5 +1,7 @@
 # forumis:fonctions utiles pour tracer courbes de résultats abc
 
+theme_set(theme_bw())
+
 
 # Marginales
 plot_marginal <- function(fhat, vname) {
@@ -15,12 +17,93 @@ save_marginal <- function(fhat, vname, dir) {
 }
 
 
+
 create_plot_marginal <- function(fhat, vname) {
-  pp <- ggplot(fhat) + geom_line(aes_string(x=vname, y="density")) +
-    ylim(0,NA) +
-    xlim(0,50)
+  #input_variables =  c("nest_quality_assessment_error", "percentage_foragers","number_nests_dbl","exploring_phase_dbl") 
+  
+  size_x_text = 22
+  size_x_title = 22
+  
+  if(vname == "nest_quality_assessment_error") {
+    borne_inf_x = 0
+    borne_sup_x = 50
+    borne_sup_y = 0.08 #0.14 
+    size_x_title = 18
+    } else if (vname == "percentage_foragers") {
+      borne_inf_x = 3
+      borne_sup_x = 100
+      borne_sup_y = 0.05 #0.07 
+      } else if (vname == "number_nests_dbl") {
+        borne_inf_x = 15
+        borne_sup_x = 80
+        borne_sup_y = 0.05 #0.07 
+        } else if (vname == "exploring_phase_dbl"){
+          borne_inf_x = 1000
+          borne_sup_x = 10000
+          borne_sup_y = 0.0006 #0.0004 
+          size_x_text = 15
+          }
+    
+    
+    pp <- ggplot(fhat) + geom_line(aes_string(x=vname, y="density")) +
+      ylim(0,borne_sup_y) +
+      xlim(borne_inf_x,borne_sup_x)+
+      theme( axis.text.y = element_text(size=20), 
+             axis.text.x = element_text(size= size_x_text),
+             axis.title.y = element_text(size=0), 
+             axis.title.x = element_text(size=0) )
   pp
 }
+
+
+
+
+
+create_plot_marginal_v3 <- function(fhat,vname,i,j, percent_max) {
+  #input_variables =  c("nest_quality_assessment_error", "percentage_foragers","number_nests_dbl","exploring_phase_dbl") 
+  
+  size_x_text = 22
+  size_x_title = 22
+  
+  if(vname == "nest_quality_assessment_error") {
+    borne_inf_x = 0
+    borne_sup_x = 50
+    borne_sup_y = 0.06 #0.14 
+    size_x_title = 18
+    vname2 = "nest_quality_assessment_error"
+  } else if (vname == "percentage_foragers") {
+    borne_inf_x = 3
+    borne_sup_x = percent_max
+    borne_sup_y = 0.1 #0.035 #0.07 
+    vname2 = "percentage_foragers"
+  } else if (vname == "number_nests_dbl") {
+    borne_inf_x = 2  ###  avant 15
+    borne_sup_x = 80
+    borne_sup_y = 0.05 #0.07 
+    vname2 = "number_nests"
+  } else if (vname == "exploring_phase_dbl"){
+    borne_inf_x = 1000
+    borne_sup_x = 10000
+    borne_sup_y = 0.002 #0.0003   à modifier pour ne pas tronquer en hauteur
+    #size_x_text = 15
+    vname2 = "exploring_phase"
+  }
+
+  size_x = if(i==18){size_x_title}else{0}
+  size_y = if(j==1){20}else{0}
+  
+  pp <- ggplot(fhat) + geom_line(aes_string(x=vname, y="density")) +
+    ylim(0,borne_sup_y) +
+    xlim(borne_inf_x,borne_sup_x)+
+    labs(x = vname2) +
+    theme( axis.text.y = element_text(size=20), 
+           axis.text.x = element_text(size= size_x_text),
+           axis.title.y = element_text(size = size_y), 
+           axis.title.x = element_text(size = size_x) )
+  pp
+}
+
+
 
 
 

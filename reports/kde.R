@@ -43,76 +43,9 @@ kde <- function(thetas, weights, bins) {
   list(result=points %>% mutate(density=fhat$estimate, vcell=vcell), grid_def=grid_def, grid_borders=grid_borders, dim=length(grid_def))
 }
 
-# kde_bounded <- function(thetas, weights, bounds, bins) {
-#   # For bounded support, transform the space through the logit function, see
-#   # http://thirdorderscientist.org/homoclinic-orbit/2013/10/24/kernel-density-estimation-for-random-variables-with-bounded-support-mdash-the-transformation-trick
-#   C <- rep(1, ncol(thetas))
-#   scale_unit <- function(x) {
-#     (x - bounds$min) / (bounds$max - bounds$min)
-#   }
-#   
-#   transform <- function(x) {
-#     u <- scale_unit(x)
-#     #log(u / (1 - u))
-#     C * log(u / (1 - u))
-#   }
-# 
-#   inverse <- function(x) {
-#     (bounds$max * exp(x/C) + bounds$min) / (1 + exp(x/C))
-#   }
-# 
-#   if(ncol(thetas) == 1) {
-#     H <- hpi(transform(thetas[[1]]), deriv.order = 4)
-#     Hmax <- H
-#   } else {
-#     H <- Hpi(transform(thetas), deriv.order = 3)
-#     Hmax <- max(diag(H))
-#   }
-#   
-#   supp <- 3.7
-#   grid_min_t <- transform(gather(summarize_all(thetas, min))$value) - Hmax*supp
-#   grid_max_t <- transform(gather(summarize_all(thetas, max))$value) + Hmax*supp
-#   
-#   grid_min <- inverse(grid_min_t)
-#   grid_max <- inverse(grid_max_t)
-#   
-#   #grid_def <- tibble(from=bounds$min + margin,
-#   #                   to=bounds$max - margin,
-#   #                   by=(to - from) / bins)
-#   grid_def <- tibble(from=grid_min,
-#                      to=grid_max,
-#                      by=(to - from) / bins)
-#   
-#   grid_borders <- pmap(grid_def, seq)
-# 
-#   points <- as_tibble(expand.grid(grid_borders))
-#   names(points) <- names(thetas)
-#   
-#   # La longeur de la cellule j pour la dimension d est donnée par 
-#   # min(grid_def$by[d] / 2, points[j,d] - grid_def$from[d]) + 
-#   #   min(grid_def$by[d] / 2, grid_def$to[d] - points[j,d]) 
-#   half_grid_def <- grid_def$by / 2
-#   limit_below <- points - bounds$min
-#   limit_above <- bounds$max - points
-#   cond_below <- (half_grid_def < limit_below)
-#   cond_above <- (half_grid_def < limit_above)
-#   length_below <- (half_grid_def) * cond_below + limit_below * (!cond_below)
-#   length_above <- (half_grid_def) * cond_above + limit_above * (!cond_above)
-#   dimcell <- length_below + length_above
-#   vcell <- reduce(dimcell, `*`)
-#   
-#   if(ncol(thetas) == 1) {
-#     fhat <- ks::kde(x=deframe(transform(thetas)), h=H, supp=supp, w=deframe(weights) * nrow(thetas), eval.points=deframe(transform(points)))
-#   } else {
-#     fhat <- ks::kde(x=transform(thetas), H=H, w=deframe(weights) * nrow(thetas), eval.points=transform(points))
-#   }
-#   #density <- fhat$estimate / (apply(points * (1 - points), 1, prod) * prod(bounds$max - bounds$min))
-#   scaled_points <- scale_unit(points)
-#   #browser()
-#   density <- fhat$estimate / (apply((bounds$max - bounds$min) * (1 / C) * scaled_points / ((1 + scaled_points) ** 2), 1, prod))
-#   list(result=tibble(points, density=density, vcell=vcell), grid_def=grid_def, grid_borders=grid_borders, dim=ncol(thetas))
-# }
 
+
+# bounds=prior
 kde_bounded_2 <- function(thetas, weights, bounds, bins=NULL, h=NULL, evalp = NULL) {
   # KDE for compact support as described in 
   # Bouezmarni and Rombouts 2010 NONPARAMETRIC DENSITY ESTIMATION FOR MULTIVARIATE BOUNDED DATA

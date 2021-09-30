@@ -1,0 +1,110 @@
+import _file_.Colony_fission_model._
+import _file_.Analyse_Colony_fission_model._
+
+// changement des données (certaines fourmis restent dans la colonie initiale)
+
+// on fait l'abc sur les 4 paramètres:
+// nest_quality_assessment_error, percentage_foragers  => comme avant
+// number_nests, exploring_phase  => on ne les fixe plus
+
+// pour être sûr de ce qui est fait, on fait le floor nous même (dans abc on a un réel)
+val exploring_phase_dbl = Val[Double]
+val number_nests_dbl = Val[Double]
+
+
+
+def setModelParams(n:Int, amount:Int) = ScalaTask (s"""
+    val size_initial_colony = ${n.toDouble}
+    val amount_allocated = ${amount.toDouble}
+    //val seed = seedDouble.toInt
+    //println("seed = " ++ seed.toString)
+    val exploring_phase = math.floor(exploring_phase_dbl)
+    val number_nests = math.floor(number_nests_dbl)
+  """) set (
+    inputs +=  (seed,number_nests_dbl,exploring_phase_dbl),
+    outputs +=  (amount_allocated,size_initial_colony,seed, number_nests, exploring_phase),  
+    //seed := 42
+)
+
+
+
+/*
+def setGlobalParameters(N:Int, explo_pahse:Int) = ScalaTask (s"""
+    val number_nests = ${N.toDouble} 
+    val exploring_phase = ${explo_pahse.toDouble} 
+  """) set (
+    outputs +=  (number_nests,exploring_phase) 
+)
+*/
+
+
+
+def abc(n:Double, obs:Array[Double]) = IslandABC(
+    evaluation = Strain( setModelParams(n.toInt, obs.sum.toInt) ) -- (Colony_fission_Task hook DisplayHook(seed) ) -- Strain(outputPostProcess) ,
+    prior = Prior(
+        UniformPrior(nest_quality_assessment_error, 0.0, 50.0),
+        UniformPrior(percentage_foragers, 3.0, 100.0),
+        UniformPrior(number_nests_dbl, 2.0, 80.0),
+        UniformPrior(exploring_phase_dbl, 1000.0, 10000.0)
+    ),
+    observed = Seq(ABC.Observed(raw_resources_new_colonies_10, obs)),
+    sample = 500,
+    generated = 30,   // nb sim per job
+    minAcceptedRatio = 0.005,
+    stopSampleSizeFactor = 5,
+    parallelism = 100, 
+    seed = seed 
+)
+  
+
+//val env = EGIEnvironment("vo.complex-systems.eu")
+val env =
+  PBSEnvironment(
+    "monnin",
+    "mesu.dsi.upmc.fr",
+    flavour = PBSPro,
+    nodes = 1,
+    threads = 1,
+    sharedDirectory = "/scratchbeta/monnin/openmole",
+    workDirectory = "/scratchbeta/monnin/work"
+  )
+
+
+val data_n = Array(1808,1628,1328,1037,999,791,789,780,720,577,549,531,495,452,294,291,290,278,252)
+
+
+val data_obs = (workDirectory / "data_ants.csv").content.split("\n").tail.map{
+            row => {val rowarray = row.split(",") ; rowarray.drop(4).map(x =>x.toDouble)  }} //.toMap
+
+
+
+//val number_nests_ABC = 40
+//val exploring_phase_ABC = 8000
+
+
+
+def output_file(i:Int) = (workDirectory / s"ResultsABC_5params/posteriorSample_${i}") 
+
+
+val abcs = for (i <- 0 until data_obs.length  ) yield {
+  abc(data_n(i), data_obs(i)).hook(output_file(i), frequency= 20)     
+}
+
+
+//EmptyTask() -- setGlobalParameters(40,2500) -- abcs.map(_ on env)
+
+//EmptyTask() -- setGlobalParameters(40,2500) -- ( abcs(0) on env )  
+//EmptyTask() -- setGlobalParameters(40,2500) -- ( abcs(0) )  
+
+
+// vrai
+//EmptyTask() -- setGlobalParameters(number_nests_ABC,exploring_phase_ABC) -- abcs.map(_ on env)  
+
+EmptyTask() -- abcs.map(_ on env)  
+// EmptyTask() -- abcs  
+
+
+//////// dossiers de résultats:
+//// ResultsABC_test4:
+// EmptyTask() -- setGlobalParameters(40,2500) -- ( abcs(0) on env )  
+

@@ -1,0 +1,74 @@
+import _file_.Colony_fission_model._
+import _file_.Analyse_Colony_fission_model._
+
+val env = EGIEnvironment("vo.complex-systems.eu")
+//val env =
+//  PBSEnvironment(
+//    "monnin",
+//    "mesu.dsi.upmc.fr",
+//    flavour = PBSPro,
+//    nodes = 1,
+//    threads = 1,
+//    sharedDirectory = "/scratchbeta/monnin/openmole",
+//    workDirectory = "/scratchbeta/monnin/work"
+//  )
+
+val colony = Val[Int]
+
+val exploring_phase_dbl = Val[Double]
+val number_nests_dbl = Val[Double]
+
+
+//val s = CSVSampling(workDirectory / "resampleABCs_2.csv") set (
+val s = CSVSampling(workDirectory / "resampleABCs_4_params_v3.csv") set (    
+  outputs += exploring_phase_dbl.mapped,
+  outputs += number_nests_dbl.mapped,
+  outputs += colony.mapped,
+  outputs += percentage_foragers.mapped,
+  outputs += nest_quality_assessment_error.mapped,
+  outputs += size_initial_colony mapped "input_size",
+  outputs += amount_allocated mapped "amount",
+  /*columns += exploring_phase_dbl,
+  columns += number_nests_dbl,
+  columns += colony,
+  columns += percentage_foragers,
+  columns += nest_quality_assessment_error,
+  columns += ("input_size", size_initial_colony)
+  */
+)
+
+
+val setModelParams = ScalaTask ("""
+    val exploring_phase = math.floor(exploring_phase_dbl)
+    val number_nests = math.floor(number_nests_dbl)
+  """) set (
+    inputs +=  (number_nests_dbl,exploring_phase_dbl),
+    outputs +=  (number_nests, exploring_phase)
+)
+
+
+
+//val s2 = s withIndex seed
+val s2 = s zip (seed in (UniformDistribution[Int]() take 5000000 ))
+
+//val hook_ReSample = CSVHook(workDirectory / "ResultsReSample_2.csv",  values = Seq(    
+val hook_ReSample = CSVHook(workDirectory / "Results/ResultsReSample_4_params_v3.csv",  values = Seq(        
+    // inputs
+    seed,exploring_phase,number_nests,colony,size_initial_colony,
+    percentage_foragers,nest_quality_assessment_error,
+    // output
+    raw_resources_new_colonies_10
+     ),  arrayOnRow = true 
+     )    
+    
+            
+            
+            
+            
+val run = DirectSampling(
+  evaluation = Strain( MoleTask( Strain(setModelParams) -- Strain(Colony_fission_Task) -- Strain(outputPostProcess) ) ) hook(hook_ReSample) , 
+  sampling = s2
+)
+
+
+run on env by 50
