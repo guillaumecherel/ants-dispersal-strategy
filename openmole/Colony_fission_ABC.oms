@@ -7,7 +7,7 @@ val targetDir = workDirectory / "output/ResultsABC_5params"
 
 val fakeModel = SystemExecTask(
     command = Seq(
-        s"""bash -c 'mkdir -p ${workDirectory / "output"}; cp -r $sourceDir $targetDir; echo Testing stdout; echo Testing stderr 2>&1; echo Source dir $sourceDir; echo Target dir $targetDir'"""
+        s"""bash -c 'for i in {0..20}; do echo "Faking to work: $$i"; sleep 1; done; mkdir -p ${workDirectory / "output"}; cp -r $sourceDir $targetDir'"""
         )
     )
 
